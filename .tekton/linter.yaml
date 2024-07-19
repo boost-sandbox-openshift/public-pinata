@@ -1,0 +1,71 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: linters
+  annotations:
+    pipelinesascode.tekton.dev/on-event: "[push, pull_request]"
+    pipelinesascode.tekton.dev/on-target-branch: "[*]"
+    pipelinesascode.tekton.dev/max-keep-runs: "2"
+    pipelinesascode.tekton.dev/task: "[git-clone]"
+spec:
+  params:
+    - name: repo_url
+      value: "{{repo_url}}"
+    - name: revision
+      value: "{{revision}}"
+  pipelineSpec:
+    params:
+      - name: repo_url
+      - name: revision
+    tasks:
+      - name: fetchit
+        displayName: "Fetch git repository"
+        params:
+          - name: url
+            value: $(params.repo_url)
+          - name: revision
+            value: $(params.revision)
+        taskRef:
+          name: git-clone
+        workspaces:
+          - name: output
+            workspace: source
+
+      - name: vale
+        displayName: "Spelling and Grammar"
+        runAfter:
+          - fetchit
+        taskSpec:
+          workspaces:
+            - name: source
+          steps:
+            - name: vale-lint
+              image: registry.access.redhat.com/ubi9/python-311
+              workingDir: $(workspaces.source.path)
+              env:
+                - name: HUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: "nightly-ci-github-hub-token"
+                      key: "hub-token"
+              script: |
+                version=$(curl -H "Authorization: Bearer ${HUB_TOKEN}" -L -s https://api.github.com/repos/errata-ai/vale/releases/latest|python -c 'import sys, json;dico=json.load(sys.stdin);print(dico["tag_name"])')
+                curl -sH "Authorization: Bearer ${HUB_TOKEN}" -L https://github.com/errata-ai/vale/releases/download/${version}/vale_${version/v}_Linux_arm64.tar.gz|tar -xz -C /tmp/ -f- vale
+                export NO_COLOR=1
+                /tmp/vale docs/content --minAlertLevel=error --output=line
+        workspaces:
+          - name: source
+            workspace: source
+
+    workspaces:
+      - name: source
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
